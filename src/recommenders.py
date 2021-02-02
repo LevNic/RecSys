@@ -44,7 +44,7 @@ class MainRecommender:
         if weighting:
             self.user_item_matrix = bm25_weight(self.user_item_matrix.T).T
 
-        self.model = self.fit(self.user_item_matrix)
+        self.model = self.fit_als()
         self.own_recommender = self.fit_own_recommender(self.user_item_matrix)
 
     @staticmethod
@@ -90,14 +90,14 @@ class MainRecommender:
         return own_recommender
 
     @staticmethod
-    def fit(user_item_matrix, n_factors=20, regularization=0.001, iterations=15, num_threads=4):
+    def fit_als(n_factors=20, regularization=0.001, iterations=15, num_threads=4):
         """Обучает ALS"""
 
         model = AlternatingLeastSquares(factors=n_factors,
                                         regularization=regularization,
                                         iterations=iterations,
                                         num_threads=num_threads)
-        model.fit(csr_matrix(user_item_matrix).T.tocsr())
+        model.fit(csr_matrix(self.user_item_matrix).T.tocsr())
 
         return model
 
