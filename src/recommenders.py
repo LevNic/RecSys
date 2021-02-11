@@ -12,6 +12,7 @@ from implicit.nearest_neighbours import bm25_weight, tfidf_weight
 
 class MainRecommender:
     """Рекоммендации, которые можно получить из ALS
+
     Input
     -----
     user_item_matrix: pd.DataFrame
@@ -21,30 +22,24 @@ class MainRecommender:
     def __init__(self, data, weighting=True):
 
         # Топ покупок каждого юзера
-        self.top_purchases = data.groupby(['user_id', 'item_id'])[
-            'quantity'].count().reset_index()
-        self.top_purchases.sort_values(
-            'quantity', ascending=False, inplace=True)
+        self.top_purchases = data.groupby(['user_id', 'item_id'])['quantity'].count().reset_index()
+        self.top_purchases.sort_values('quantity', ascending=False, inplace=True)
         self.top_purchases = self.top_purchases[self.top_purchases['item_id'] != 999999]
 
         # Топ покупок по всему датасету
-        self.overall_top_purchases = data.groupby(
-            'item_id')['quantity'].count().reset_index()
-        self.overall_top_purchases.sort_values(
-            'quantity', ascending=False, inplace=True)
-        self.overall_top_purchases = self.overall_top_purchases[
-            self.overall_top_purchases['item_id'] != 999999]
+        self.overall_top_purchases = data.groupby('item_id')['quantity'].count().reset_index()
+        self.overall_top_purchases.sort_values('quantity', ascending=False, inplace=True)
+        self.overall_top_purchases = self.overall_top_purchases[self.overall_top_purchases['item_id'] != 999999]
         self.overall_top_purchases = self.overall_top_purchases.item_id.tolist()
 
         self.user_item_matrix = self._prepare_matrix(data)  # pd.DataFrame
         self.id_to_itemid, self.id_to_userid, \
-            self.itemid_to_id, self.userid_to_id = self._prepare_dicts(
-                self.user_item_matrix)
+            self.itemid_to_id, self.userid_to_id = self._prepare_dicts(self.user_item_matrix)
 
         if weighting:
             self.user_item_matrix = bm25_weight(self.user_item_matrix.T).T
 
-        self.model = self.fit_als()
+        self.model = self.fit(self.user_item_matrix)
         self.own_recommender = self.fit_own_recommender(self.user_item_matrix)
 
     @staticmethod
@@ -57,8 +52,7 @@ class MainRecommender:
                                           fill_value=0
                                           )
 
-        user_item_matrix = user_item_matrix.astype(
-            float)  # необходимый тип матрицы для implicit
+        user_item_matrix = user_item_matrix.astype(float)  # необходимый тип матрицы для implicit
 
         return user_item_matrix
 
@@ -90,14 +84,14 @@ class MainRecommender:
         return own_recommender
 
     @staticmethod
-    def fit_als(n_factors=20, regularization=0.001, iterations=15, num_threads=4):
+    def fit(user_item_matrix, n_factors=20, regularization=0.001, iterations=15, num_threads=4):
         """Обучает ALS"""
 
         model = AlternatingLeastSquares(factors=n_factors,
                                         regularization=regularization,
                                         iterations=iterations,
                                         num_threads=num_threads)
-        model.fit(csr_matrix(self.user_item_matrix).T.tocsr())
+        model.fit(csr_matrix(user_item_matrix).T.tocsr())
 
         return model
 
@@ -114,8 +108,7 @@ class MainRecommender:
 
     def _get_similar_item(self, item_id):
         """Находит товар, похожий на item_id"""
-        recs = self.model.similar_items(
-            self.itemid_to_id[item_id], N=2)  # Товар похож на себя -> рекомендуем 2 товара
+        recs = self.model.similar_items(self.itemid_to_id[item_id], N=2)  # Товар похож на себя -> рекомендуем 2 товара
         top_rec = recs[1][0]  # И берем второй (не товар из аргумента метода)
         return self.id_to_itemid[top_rec]
 
@@ -133,13 +126,11 @@ class MainRecommender:
 
         self._update_dict(user_id=user)
         res = [self.id_to_itemid[rec[0]] for rec in model.recommend(userid=self.userid_to_id[user],
-                                                                    user_items=csr_matrix(
-                                                                        self.user_item_matrix).tocsr(),
-                                                                    N=N,
-                                                                    filter_already_liked_items=False,
-                                                                    filter_items=[
-                                                                        self.itemid_to_id[999999]],
-                                                                    recalculate_user=True)]
+                                        user_items=csr_matrix(self.user_item_matrix).tocsr(),
+                                        N=N,
+                                        filter_already_liked_items=False,
+                                        filter_items=[self.itemid_to_id[999999]],
+                                        recalculate_user=True)]
 
         res = self._extend_with_top_popular(res, N=N)
 
@@ -161,11 +152,9 @@ class MainRecommender:
     def get_similar_items_recommendation(self, user, N=5):
         """Рекомендуем товары, похожие на топ-N купленных юзером товаров"""
 
-        top_users_purchases = self.top_purchases[self.top_purchases['user_id'] == user].head(
-            N)
+        top_users_purchases = self.top_purchases[self.top_purchases['user_id'] == user].head(N)
 
-        res = top_users_purchases['item_id'].apply(
-            lambda x: self._get_similar_item(x)).tolist()
+        res = top_users_purchases['item_id'].apply(lambda x: self._get_similar_item(x)).tolist()
         res = self._extend_with_top_popular(res, N=N)
 
         assert len(res) == N, 'Количество рекомендаций != {}'.format(N)
@@ -177,8 +166,7 @@ class MainRecommender:
         res = []
 
         # Находим топ-N похожих пользователей
-        similar_users = self.model.similar_users(
-            self.userid_to_id[user], N=N+1)
+        similar_users = self.model.similar_users(self.userid_to_id[user], N=N+1)
         similar_users = [rec[0] for rec in similar_users]
         similar_users = similar_users[1:]   # удалим юзера из запроса
 
